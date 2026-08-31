@@ -20,7 +20,15 @@ class BirdDataset(Text2SQLBaseDataset):
     ):
         dataset_folder = Path(dataset_folder)
         bird_folder = dataset_folder / "bird"
-        if not bird_folder.exists() or force_download:
+        # BirdBench stores each split in its own top-level folder
+        # (bird/train/train_databases, bird/validation/dev_databases), so
+        # fetch only the split being asked for. Downloading the whole repo
+        # pulls the training databases too — well over 100GB — even when
+        # only the validation split is wanted. The existence check is on
+        # the split folder rather than the parent so that asking for a
+        # second split later still downloads it.
+        split_folder = bird_folder / split
+        if not split_folder.exists() or force_download:
             bird_folder.mkdir(parents=True, exist_ok=True)
 
             # Download it from hf hub
@@ -29,6 +37,7 @@ class BirdDataset(Text2SQLBaseDataset):
                 repo_type="dataset",
                 local_dir=dataset_folder / "bird",
                 force_download=force_download,
+                allow_patterns=[f"{split}/*"],
             )
 
         dataset_path = bird_folder / split
