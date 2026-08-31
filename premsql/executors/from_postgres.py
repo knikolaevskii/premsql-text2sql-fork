@@ -31,13 +31,37 @@ class PostgresExecutor(BaseExecutor):
     file is read instead. Loading a .env file is the caller's job — this
     only reads os.environ.
 
-    `db_name` is per-run configuration rather than a credential, so it's a
-    constructor argument.
+    The target database is resolved per row, because a benchmark's questions
+    can span many databases — Defog's 210 questions cover 11 of them, so a
+    single fixed database could only ever evaluate a fraction of the set.
+    Resolution order for each call:
+
+      1. dsn_or_db_path is already a postgresql:// URL — connect to it as-is
+      2. db_name was passed to the constructor — use that for every row
+      3. otherwise take the database name from dsn_or_db_path's filename stem,
+         which is how the dataset classes lay out db_id (".../<db_id>/<db_id>
+         .sqlite"). The file itself need not exist; only its name is used.
+
+    `db_name` is therefore optional, and only needed to force every row at one
+    database.
     """
 
-    def __init__(self, db_name: str, query_timeout: float = 10.0) -> None:
+    def __init__(self, db_name: Optional[str] = None, query_timeout: float = 10.0) -> None:
         self.db_name = db_name
         self.query_timeout = query_timeout
+
+    def _resolve_db_name(self, dsn_or_db_path: Optional[str]) -> str:
+        if self.db_name:
+            return self.db_name
+        if dsn_or_db_path:
+            stem = Path(dsn_or_db_path).stem
+            if stem:
+                return stem
+        raise ValueError(
+            "Could not determine which Postgres database to query: pass "
+            "db_name, or give a dsn_or_db_path whose filename identifies the "
+            "database."
+        )
 
     def _load_credentials(self, dsn_or_db_path: Optional[str]) -> Dict[str, Any]:
         creds = {
@@ -76,11 +100,15 @@ class PostgresExecutor(BaseExecutor):
         error = None
 
         try:
-            creds = self._load_credentials(dsn_or_db_path)
-            db_url = (
-                f"postgresql://{creds['user']}:{creds['password']}"
-                f"@{creds['host']}:{creds['port']}/{self.db_name}"
-            )
+            if dsn_or_db_path and str(dsn_or_db_path).startswith("postgresql://"):
+                db_url = dsn_or_db_path
+            else:
+                creds = self._load_credentials(dsn_or_db_path)
+                db_name = self._resolve_db_name(dsn_or_db_path)
+                db_url = (
+                    f"postgresql://{creds['user']}:{creds['password']}"
+                    f"@{creds['host']}:{creds['port']}/{db_name}"
+                )
             engine = create_engine(db_url)
 
             with engine.connect() as conn:
