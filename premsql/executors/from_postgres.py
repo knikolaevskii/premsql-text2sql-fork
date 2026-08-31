@@ -49,11 +49,19 @@ class PostgresExecutor(BaseExecutor):
         if creds["user"] and creds["password"]:
             return creds
 
+        # dsn_or_db_path carries each row's db_path, which for most datasets is
+        # a .sqlite file rather than a credentials file. Only treat it as
+        # credentials when it actually parses as JSON, otherwise fall through
+        # to the error below rather than surfacing a confusing decode failure.
         if dsn_or_db_path and Path(dsn_or_db_path).is_file():
-            with open(dsn_or_db_path, "r") as f:
-                from_file = json.load(f)
-            logger.info(f"Postgres credentials read from file: {dsn_or_db_path}")
-            return {**creds, **from_file}
+            try:
+                with open(dsn_or_db_path, "r") as f:
+                    from_file = json.load(f)
+            except (UnicodeDecodeError, json.JSONDecodeError):
+                from_file = None
+            if isinstance(from_file, dict) and "user" in from_file:
+                logger.info(f"Postgres credentials read from file: {dsn_or_db_path}")
+                return {**creds, **from_file}
 
         raise ValueError(
             "Postgres credentials not found. Set POSTGRES_USER and "

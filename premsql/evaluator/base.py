@@ -258,10 +258,14 @@ class Text2SQLEvaluator:
 
         for result in results:
             error_msg = result.get("error", "") or ""
-            exact_match = result.get(metric_name, 0)
+            score = result.get(metric_name, 0)
             subset_match = result.get("subset_match", 0)
 
-            if exact_match == 1:
+            # accuracy is 0/1, but ves is a continuous runtime ratio, so a
+            # correct ves row is any non-zero score rather than exactly 1.
+            exact_match = score == 1 if metric_name == "accuracy" else score > 0
+
+            if exact_match:
                 success_count += 1
             elif subset_match == 1:
                 subset_count += 1
@@ -276,13 +280,13 @@ class Text2SQLEvaluator:
             metric_value = sum(res[metric_name] for res in results) / total_queries * 100
             subset_value = sum(res.get("subset_match", 0) for res in results) / total_queries * 100
         elif metric_name == "ves":
-            total_ratio = 0.0
-            subset_ratio = 0.0
-            for result in results:
-                if result[metric_name] == 1:
-                    total_ratio += math.sqrt(result[metric_name]) * 100
-                if result.get("subset_match", 0) == 1:
-                    subset_ratio += math.sqrt(result.get("subset_match", 0)) * 100
+            # ves is a runtime ratio (generated vs gold), not a 0/1 flag, so
+            # every row contributes sqrt(ratio) * 100. Rows that failed to
+            # match carry ves=0 and contribute nothing, which is why this is
+            # summed unconditionally: guarding on `== 1` would discard every
+            # real ratio (they are floats like 1.03) and always report 0%.
+            total_ratio = sum(math.sqrt(res[metric_name]) for res in results) * 100
+            subset_ratio = sum(res.get("subset_match", 0) for res in results) * 100
             metric_value = total_ratio / total_queries
             subset_value = subset_ratio / total_queries
         else:
