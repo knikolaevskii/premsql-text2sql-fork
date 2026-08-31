@@ -11,6 +11,7 @@ from platformdirs import user_cache_dir
 from premsql.evaluator.base import BaseExecutor
 from premsql.logger import setup_console_logger
 from premsql.prompts import ERROR_HANDLING_PROMPT
+from func_timeout import FunctionTimedOut, func_timeout
 
 logger = setup_console_logger(name="[GENERATOR]")
 
@@ -71,8 +72,18 @@ class Text2SQLGeneratorBase(ABC):
         postprocess: Optional[bool] = True,
         **kwargs,
     ):
+        """
+        Generates SQL, executes it against the target database, and if it errors,
+        feeds the error back into the prompt for one corrective retry cycle (up to
+        max_retries attempts total). Tracks whether the first attempt failed and
+        whether a later attempt recovered from it, so callers can report a
+        correction rate alongside raw accuracy.
+        """
         error_already_found = False
-        for _ in range(max_retries):
+        first_attempt_failed = False
+        correction_successful = False
+
+        for attempt in range(max_retries):
             sql = self.generate(
                 data_blob=data_blob,
                 temperature=temperature,
@@ -80,11 +91,19 @@ class Text2SQLGeneratorBase(ABC):
                 postprocess=postprocess,
                 **kwargs,
             )
-            error = executor.execute_sql(sql=sql, dsn_or_db_path=data_blob["db_path"])[
-                "error"
-            ]
+
+            try:
+                error = func_timeout(10, executor.execute_sql, args=(sql, data_blob["db_path"]))["error"]
+            except FunctionTimedOut:
+                error = "Timeout"
+
+            if attempt == 0 and error:
+                first_attempt_failed = True
+
             if not error:
-                return sql
+                if first_attempt_failed and attempt > 0:
+                    correction_successful = True
+                return sql, first_attempt_failed, correction_successful
 
             if not error_already_found:
                 prompt = data_blob["prompt"].split("# SQL:")[0].strip()
@@ -93,7 +112,8 @@ class Text2SQLGeneratorBase(ABC):
                 )
                 data_blob["prompt"] = error_prompt
                 error_already_found = True
-        return sql
+
+        return sql, first_attempt_failed, correction_successful
 
     def postprocess(self, output_string: str):
         sql_start_keywords = [
@@ -139,29 +159,60 @@ class Text2SQLGeneratorBase(ABC):
             return existing_response
 
         to_dump = []
-        for content in tqdm(dataset, total=len(dataset), desc="Generating result ..."):
-            sql = (
-                self.execution_guided_decoding(
-                    data_blob=content,
-                    executor=executor,
-                    temperature=temperature,
-                    postprocess=postprocess,
-                    max_new_tokens=max_new_tokens,
-                    max_retries=max_retries,
-                    **kwargs,
-                )
-                if executor is not None
-                else self.generate(
-                    data_blob=content,
-                    temperature=temperature,
-                    max_new_tokens=max_new_tokens,
-                    postprocess=postprocess,
-                    **kwargs,
-                )
-            )
+        count = 0
 
-            to_dump.append({**content, "generated": sql})
+        first_try_failed = 0
+        managed_to_correct = 0
+
+        for content in tqdm(dataset, total=len(dataset), desc="Generating result ..."):
+            try:
+                if executor is not None:
+                    sql, first_attempt_failed, correction_successful = self.execution_guided_decoding(
+                        data_blob=content,
+                        executor=executor,
+                        temperature=temperature,
+                        postprocess=postprocess,
+                        max_new_tokens=max_new_tokens,
+                        max_retries=max_retries,
+                        **kwargs,
+                    )
+
+                    if first_attempt_failed:
+                        first_try_failed += 1
+                        if correction_successful:
+                            managed_to_correct += 1
+
+                else:
+                    sql = self.generate(
+                        data_blob=content,
+                        temperature=temperature,
+                        max_new_tokens=max_new_tokens,
+                        postprocess=postprocess,
+                        **kwargs,
+                    )
+
+                to_dump.append({**content, "generated": sql})
+                count += 1
+
+                if count % 5 == 0:
+                    json.dump(to_dump, open(self.experiment_path / "predict.json", "w"), indent=4)
+                    logger.info(f"Saved progress: {count}/{len(dataset)} completed")
+
+            except Exception as e:
+                logger.error(f"Error processing item {count}: {str(e)}")
+                to_dump.append({**content, "generated": "SELECT 1;", "error": str(e)})
+                count += 1
+                continue
 
         json.dump(to_dump, open(self.experiment_path / "predict.json", "w"), indent=4)
         logger.info(f"All responses are written to: {self.experiment_path}")
+
+        if executor is not None:
+            percentage = (managed_to_correct / first_try_failed * 100) if first_try_failed > 0 else 0
+            logger.info(
+                f"Correction statistics — first try failed: {first_try_failed}, "
+                f"managed to correct: {managed_to_correct}, "
+                f"correction percentage: {percentage:.1f}%"
+            )
+
         return to_dump
