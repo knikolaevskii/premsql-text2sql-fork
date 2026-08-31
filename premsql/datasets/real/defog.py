@@ -59,9 +59,18 @@ class DefogDataset(Text2SQLBaseDataset):
         model_name_or_path: str | None = None,
         prompt_template: str | None = None,
         tokenize: bool | None = False,
+        custom_db_path: str | None = None,
     ):
+        """
+        custom_db_path overrides the per-row db_path after setup. Defog's
+        default db_path points at a per-db_id .sqlite file (set up above),
+        which is meaningless for executors that don't take a SQLite path —
+        e.g. PostgresExecutor expects db_path to be a path to a JSON
+        credentials file instead. Pass custom_db_path to point every row at
+        that file when evaluating against Postgres.
+        """
         logger.info("Setting up Defog Dataset")
-        return super().setup_dataset(
+        result = super().setup_dataset(
             filter_by=filter_by,
             num_rows=num_rows,
             num_fewshot=num_fewshot,
@@ -69,3 +78,9 @@ class DefogDataset(Text2SQLBaseDataset):
             tokenize=tokenize,
             prompt_template=prompt_template,
         )
+
+        if custom_db_path:
+            for content in self.dataset:
+                content["db_path"] = custom_db_path
+
+        return result
