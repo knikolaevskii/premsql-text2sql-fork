@@ -5,6 +5,8 @@ from premsql.datasets.base import StandardDataset, Text2SQLBaseDataset
 from premsql.datasets.real.bird import BirdDataset
 from premsql.datasets.real.domains import DomainsDataset
 from premsql.datasets.real.spider import SpiderUnifiedDataset
+from premsql.datasets.real.wikisql import WikiSQLDataset
+from premsql.datasets.real.defog import DefogDataset
 from premsql.datasets.synthetic.gretel import GretelAIDataset
 from premsql.utils import get_accepted_filters
 
@@ -19,14 +21,16 @@ class Text2SQLDataset:
         force_download: Optional[bool] = False,
         **kwargs
     ):
-        assert dataset_name in ["bird", "domains", "spider", "gretel"], ValueError(
-            "Dataset should be one of bird, domains, spider, gretel"
+        assert dataset_name in ["bird", "domains", "spider", "gretel", "wikisql", "defog"], ValueError(
+            "Dataset should be one of bird, domains, spider, gretel, wikisql, defog"
         )
         dataset_mapping = {
             "bird": BirdDataset,
             "domains": DomainsDataset,
             "spider": SpiderUnifiedDataset,
             "gretel": GretelAIDataset,
+            "wikisql": WikiSQLDataset,
+            "defog": DefogDataset,
         }
         self._text2sql_dataset: Text2SQLBaseDataset = dataset_mapping[dataset_name](
             split=split,
@@ -69,5 +73,7 @@ __all__ = [
     "SpiderUnifiedDataset",
     "BirdDataset",
     "DomainsDataset",
+    "WikiSQLDataset",
+    "DefogDataset",
     "Text2SQLDataset",
 ]
