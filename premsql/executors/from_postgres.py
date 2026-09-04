@@ -120,6 +120,13 @@ class PostgresExecutor(BaseExecutor):
                 df = func_timeout(self.query_timeout, pd.read_sql_query, args=(sql, conn))
                 result = list(df.itertuples(index=False, name=None))
 
+        except ModuleNotFoundError as e:
+            # SQLAlchemy resolves the driver lazily, so a missing one only
+            # surfaces here as a bare import error per row.
+            error = (
+                f"Postgres driver not installed ({e}). Install psycopg2-binary."
+            )
+            logger.error(error)
         except Exception as e:
             logger.error(f"Postgres execution failed: {e}")
             error = str(e)

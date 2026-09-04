@@ -16,6 +16,8 @@ isort = "^5.13.2"
 numpy = "^1.26.3"
 tqdm = "^4.66.4"
 mysql-connector-python = "^9.0.0"
+# Driver for PostgresExecutor; SQLAlchemy needs one to speak postgresql://
+psycopg2-binary = "^2.9.9"
 SQLAlchemy = "^2.0.30"
 sqlparse = "^0.5.1"
 click = "^8.1.3"
