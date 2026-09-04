@@ -70,7 +70,11 @@ class PostgresExecutor(BaseExecutor):
             "user": os.environ.get("POSTGRES_USER"),
             "password": os.environ.get("POSTGRES_PASSWORD"),
         }
-        if creds["user"] and creds["password"]:
+        # Password deliberately not required: a local server using trust or
+        # peer authentication (the default for a Homebrew/initdb install) has
+        # no password to give, and demanding one turns a working setup into a
+        # confusing failure.
+        if creds["user"]:
             return creds
 
         # dsn_or_db_path carries each row's db_path, which for most datasets is
