@@ -58,6 +58,16 @@ class BirdDataset(Text2SQLBaseDataset):
         )
         logger.info("Loaded Bird Dataset")
 
+        # BIRD calls its external-knowledge field "evidence", while the prompt
+        # builder reads "knowledge". Without this the hint is silently dropped
+        # for the 1386 of 1534 validation rows that carry one — and those hints
+        # are frequently the whole task ("eligible free rate = `Free Meal Count
+        # (K-12)` / `Enrollment (K-12)`"), so omitting them both deflates
+        # scores and makes them incomparable to published BIRD numbers.
+        for content in self.dataset:
+            if "knowledge" not in content and content.get("evidence"):
+                content["knowledge"] = content["evidence"]
+
     def setup_dataset(
         self,
         filter_by: tuple | None = None,
