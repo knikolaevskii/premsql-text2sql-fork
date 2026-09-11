@@ -6,7 +6,7 @@ from typing import Any, Dict, Optional
 
 import pandas as pd
 from func_timeout import func_timeout
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 
 from premsql.executors.base import BaseExecutor
 from premsql.logger import setup_console_logger
@@ -117,7 +117,15 @@ class PostgresExecutor(BaseExecutor):
 
             with engine.connect() as conn:
                 conn.execution_options(isolation_level="AUTOCOMMIT")
-                df = func_timeout(self.query_timeout, pd.read_sql_query, args=(sql, conn))
+                # Wrapped in text() so the query is treated as a literal
+                # statement rather than a parameterised one. psycopg2 uses
+                # %-style placeholders, so passing raw SQL straight through
+                # makes every "%" look like a placeholder: a perfectly valid
+                # LIKE '%foo%' then fails with "immutabledict is not a
+                # sequence" and gets scored as a failed query.
+                df = func_timeout(
+                    self.query_timeout, pd.read_sql_query, args=(text(sql), conn)
+                )
                 result = list(df.itertuples(index=False, name=None))
 
         except ModuleNotFoundError as e:
