@@ -14,16 +14,6 @@ version = 0.2.10+kn.1     # upstream 0.2.10 plus local revision 1
 The version carries a PEP 440 local identifier so `pip list` distinguishes this
 from the PyPI release, which is otherwise also `0.2.10`.
 
-## Branches
-
-| branch | contents |
-|--------|----------|
-| `main` | untouched upstream, identical to `premAI-io/premsql@7041239` |
-| `text2sql-extensions` | this work — 15 commits, 1328 insertions across 16 files |
-
-`main` is deliberately left alone, including its PGP signatures, so
-`git diff main..text2sql-extensions` is an exact record of what changed.
-
 ## Install
 
 ```bash
